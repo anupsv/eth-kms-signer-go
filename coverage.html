@@ -1,0 +1,341 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>aws-kms-eth: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">aws-kms-eth/mock_signer.go (33.3%)</option>
+				
+				<option value="file1">aws-kms-eth/signer.go (84.1%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package aws_kms_eth
+
+import (
+        "context"
+        "github.com/aws/aws-sdk-go-v2/service/kms"
+)
+
+type MockKMSClient struct {
+        MockGetPublicKey func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error)
+        MockSign         func(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error)
+}
+
+func (m *MockKMSClient) GetPublicKey(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) <span class="cov8" title="1">{
+        if m.MockGetPublicKey != nil </span><span class="cov8" title="1">{
+                return m.MockGetPublicKey(ctx, input)
+        }</span>
+        <span class="cov0" title="0">return nil, nil</span>
+}
+
+func (m *MockKMSClient) Sign(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error) <span class="cov0" title="0">{
+        if m.MockSign != nil </span><span class="cov0" title="0">{
+                return m.MockSign(ctx, input)
+        }</span>
+        <span class="cov0" title="0">return nil, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package aws_kms_eth
+
+import (
+        "bytes"
+        "context"
+        "crypto/ecdsa"
+        "encoding/asn1"
+        "encoding/hex"
+        "errors"
+        "fmt"
+        "github.com/ethereum/go-ethereum/crypto/secp256k1"
+        "math/big"
+
+        "github.com/aws/aws-sdk-go-v2/service/kms"
+        "github.com/aws/aws-sdk-go-v2/service/kms/types"
+        "github.com/ethereum/go-ethereum/common"
+        "github.com/ethereum/go-ethereum/crypto"
+)
+
+type KMSClient interface {
+        GetPublicKey(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error)
+        Sign(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error)
+}
+
+// ECDSASignature represents the ASN1 structure of ECDSA signature
+type asn1EcSig struct {
+        R, S *big.Int
+}
+
+var (
+        secp256k1N     = crypto.S256().Params().N
+        secp256k1HalfN = new(big.Int).Div(secp256k1N, big.NewInt(2))
+)
+
+// adjustSignatureLength ensures the byte slice is exactly 32 bytes long
+func adjustSignatureLength(buffer []byte) []byte <span class="cov8" title="1">{
+
+        if len(buffer) &gt; 32 </span><span class="cov0" title="0">{
+                buffer = buffer[len(buffer)-32:] // Take last 32 bytes
+        }</span>
+
+        <span class="cov8" title="1">buffer = bytes.TrimLeft(buffer, "\x00")
+        for len(buffer) &lt; 32 </span><span class="cov0" title="0">{
+                zeroBuf := []byte{0}
+                buffer = append(zeroBuf, buffer...)
+        }</span>
+        <span class="cov8" title="1">return buffer</span>
+}
+
+// ECDSAPublicKey represents the ASN1 structure of ECDSA public key
+type ECDSAPublicKey struct {
+        Algorithm struct {
+                Algorithm  asn1.ObjectIdentifier
+                Parameters asn1.ObjectIdentifier
+        }
+        PublicKey asn1.BitString
+}
+
+type KMSEthereumSigner struct {
+        kmsClient KMSClient
+        keyID     string
+}
+
+func NewKMSEthereumSigner(kmsClient KMSClient, keyID string) (*KMSEthereumSigner, error) <span class="cov8" title="1">{
+
+        if kmsClient == nil </span><span class="cov0" title="0">{
+                return nil, errors.New("kms client is nil")
+        }</span>
+
+        <span class="cov8" title="1">if keyID == "" </span><span class="cov8" title="1">{
+                return nil, errors.New("keyID is empty")
+        }</span>
+
+        <span class="cov8" title="1">return &amp;KMSEthereumSigner{
+                kmsClient: kmsClient,
+                keyID:     keyID,
+        }, nil</span>
+}
+
+// SignMessage signs a message using KMS
+func (kmsEthereumSigner *KMSEthereumSigner) SignMessage(message []byte) ([]byte, error) <span class="cov8" title="1">{
+
+        if len(message) == 0 </span><span class="cov8" title="1">{
+                return nil, errors.New("message must not be empty")
+        }</span>
+
+        // Get the public key first
+        <span class="cov8" title="1">pubKey, _, err := kmsEthereumSigner.GetPublicKey()
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("failed to get public key: %w", err)
+        }</span>
+
+        // Verify public key is on the curve
+        <span class="cov8" title="1">if !secp256k1.S256().IsOnCurve(pubKey.X, pubKey.Y) </span><span class="cov0" title="0">{
+                return nil, errors.New("public key is not on curve")
+        }</span>
+
+        // Hash the message according to Ethereum's signing standard
+        <span class="cov8" title="1">messageHash := crypto.Keccak256(message)
+
+        // Sign the hash using KMS
+        signingInput := &amp;kms.SignInput{
+                KeyId:            &amp;kmsEthereumSigner.keyID,
+                Message:          messageHash,
+                SigningAlgorithm: types.SigningAlgorithmSpecEcdsaSha256,
+                MessageType:      types.MessageTypeDigest,
+        }
+
+        signature, err := kmsEthereumSigner.kmsClient.Sign(context.Background(), signingInput)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to sign message with KMS: %w", err)
+        }</span>
+
+        // Parse the signature
+        <span class="cov8" title="1">publicKeyBytes := crypto.S256().Marshal(pubKey.X, pubKey.Y)
+
+        var sigAsn1 asn1EcSig
+        _, err = asn1.Unmarshal(signature.Signature, &amp;sigAsn1)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("asn1.Unmarshal failed: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">r := sigAsn1.R.Bytes()
+        s := sigAsn1.S.Bytes()
+
+        // Adjust S value according to Ethereum standard
+        sBigInt := new(big.Int).SetBytes(s)
+        if sBigInt.Cmp(secp256k1HalfN) &gt; 0 </span><span class="cov8" title="1">{
+                s = new(big.Int).Sub(secp256k1N, sBigInt).Bytes()
+        }</span>
+
+        // Create RS signature
+        <span class="cov8" title="1">rsSignature := append(adjustSignatureLength(r), adjustSignatureLength(s)...)
+
+        // Try with v = 0
+        signature0 := append(rsSignature, byte(0))
+        recoveredPublicKeyBytes, err := crypto.Ecrecover(messageHash, signature0)
+        if err == nil &amp;&amp; hex.EncodeToString(recoveredPublicKeyBytes) == hex.EncodeToString(publicKeyBytes) </span><span class="cov8" title="1">{
+                return signature0, nil
+        }</span>
+
+        // Try with v = 1
+        <span class="cov8" title="1">signature1 := append(rsSignature, byte(1))
+        recoveredPublicKeyBytes, err = crypto.Ecrecover(messageHash, signature1)
+        if err == nil &amp;&amp; hex.EncodeToString(recoveredPublicKeyBytes) == hex.EncodeToString(publicKeyBytes) </span><span class="cov8" title="1">{
+                return signature1, nil
+        }</span>
+
+        <span class="cov0" title="0">return nil, errors.New("can not reconstruct public key from signature")</span>
+}
+
+// GetPublicKey retrieves the public key from KMS
+func (kmsEthereumSigner *KMSEthereumSigner) GetPublicKey() (*ecdsa.PublicKey, *ECDSAPublicKey, error) <span class="cov8" title="1">{
+        input := &amp;kms.GetPublicKeyInput{
+                KeyId: &amp;kmsEthereumSigner.keyID,
+        }
+
+        output, err := kmsEthereumSigner.kmsClient.GetPublicKey(context.Background(), input)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, nil, fmt.Errorf("failed to get public key from KMS: %w", err)
+        }</span>
+
+        // Decode ASN1 public key
+        <span class="cov8" title="1">var pubKey ECDSAPublicKey
+        _, err = asn1.Unmarshal(output.PublicKey, &amp;pubKey)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, nil, fmt.Errorf("failed to decode public key ASN1: %w", err)
+        }</span>
+
+        // Get the public key bytes
+        <span class="cov8" title="1">pubKeyECDSA, err := crypto.UnmarshalPubkey(pubKey.PublicKey.Bytes)
+
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, nil, fmt.Errorf("failed to unmarshal public key: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if !pubKeyECDSA.IsOnCurve(pubKeyECDSA.X, pubKeyECDSA.Y) </span><span class="cov0" title="0">{
+                return nil, nil, errors.New("public key is not on curve")
+        }</span>
+
+        <span class="cov8" title="1">return pubKeyECDSA, &amp;pubKey, err</span>
+}
+
+// GetAddress returns the Ethereum address for this key
+func (kmsEthereumSigner *KMSEthereumSigner) GetAddress() (common.Address, error) <span class="cov8" title="1">{
+
+        _, as1PubKey, err := kmsEthereumSigner.GetPublicKey()
+        if err != nil </span><span class="cov8" title="1">{
+                return common.Address{}, err
+        }</span>
+
+        <span class="cov8" title="1">pubKeyBuffer := as1PubKey.PublicKey.Bytes
+        // Ensure the key is in uncompressed format and starts with 0x04
+        if len(pubKeyBuffer) == 0 || pubKeyBuffer[0] != 0x04 </span><span class="cov0" title="0">{
+                return common.Address{}, fmt.Errorf("invalid public key format")
+        }</span>
+
+        // Remove the prefix (0x04) from the uncompressed key
+        <span class="cov8" title="1">pubKeyBuffer = pubKeyBuffer[1:]
+
+        // Hash the public key buffer using Keccak256
+        pubKeyHash := crypto.Keccak256(pubKeyBuffer)
+
+        // Take the last 20 bytes as the Ethereum address
+        ethAddress := common.BytesToAddress(pubKeyHash[len(pubKeyHash)-20:])
+        fmt.Printf("Generated Ethereum address: %s\n", ethAddress.Hex())
+
+        return ethAddress, nil</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
