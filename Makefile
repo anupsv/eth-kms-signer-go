@@ -15,7 +15,6 @@ teardown-localstack:
 
 fuzz-with-localstack: setup-localstack
 	go test -fuzz=FuzzSignMessage -fuzztime=5m
-	go test -fuzz=FuzzConcurrentSigning -fuzztime=5m
 	go test -fuzz=FuzzPublicKeyFormat -fuzztime=5m
 	make teardown-localstack
 

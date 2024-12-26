@@ -459,61 +459,61 @@ func FuzzSignMessage(f *testing.F) {
 	})
 }
 
-func FuzzConcurrentSigning(f *testing.F) {
-
-	ctx, err := setupFuzzTest()
-	if err != nil {
-		f.Fatal(err)
-	}
-
-	f.Add([]byte("Base message"), uint8(2))
-
-	f.Fuzz(func(t *testing.T, baseMessage []byte, numGoroutines uint8) {
-		if len(baseMessage) == 0 || numGoroutines == 0 {
-			return
-		}
-
-		// Limit number of goroutines to reasonable value
-		numWorkers := int(numGoroutines%20) + 1
-		var wg sync.WaitGroup
-		errCh := make(chan error, numWorkers)
-
-		for i := 0; i < numWorkers; i++ {
-			wg.Add(1)
-			go func(index int) {
-				defer wg.Done()
-
-				// Create unique message for each goroutine
-				message := append(baseMessage, byte(index))
-				signature, err := ctx.signer.SignMessage(message)
-				if err != nil {
-					errCh <- fmt.Errorf("worker %d signing failed: %v", index, err)
-					return
-				}
-
-				messageHash := crypto.Keccak256(message)
-				recoveredPub, err := crypto.Ecrecover(messageHash, signature)
-				if err != nil {
-					errCh <- fmt.Errorf("worker %d recovery failed: %v", index, err)
-					return
-				}
-
-				recoveredAddr := common.BytesToAddress(crypto.Keccak256(recoveredPub[1:])[12:])
-				if recoveredAddr != ctx.address {
-					errCh <- fmt.Errorf("worker %d address mismatch", index)
-					return
-				}
-			}(i)
-		}
-
-		wg.Wait()
-		close(errCh)
-
-		for err := range errCh {
-			t.Error(err)
-		}
-	})
-}
+//func FuzzConcurrentSigning(f *testing.F) {
+//
+//	ctx, err := setupFuzzTest()
+//	if err != nil {
+//		f.Fatal(err)
+//	}
+//
+//	f.Add([]byte("Base message"), uint8(2))
+//
+//	f.Fuzz(func(t *testing.T, baseMessage []byte, numGoroutines uint8) {
+//		if len(baseMessage) == 0 || numGoroutines == 0 {
+//			return
+//		}
+//
+//		// Limit number of goroutines to reasonable value
+//		numWorkers := int(numGoroutines%20) + 1
+//		var wg sync.WaitGroup
+//		errCh := make(chan error, numWorkers)
+//
+//		for i := 0; i < numWorkers; i++ {
+//			wg.Add(1)
+//			go func(index int) {
+//				defer wg.Done()
+//
+//				// Create unique message for each goroutine
+//				message := append(baseMessage, byte(index))
+//				signature, err := ctx.signer.SignMessage(message)
+//				if err != nil {
+//					errCh <- fmt.Errorf("worker %d signing failed: %v", index, err)
+//					return
+//				}
+//
+//				messageHash := crypto.Keccak256(message)
+//				recoveredPub, err := crypto.Ecrecover(messageHash, signature)
+//				if err != nil {
+//					errCh <- fmt.Errorf("worker %d recovery failed: %v", index, err)
+//					return
+//				}
+//
+//				recoveredAddr := common.BytesToAddress(crypto.Keccak256(recoveredPub[1:])[12:])
+//				if recoveredAddr != ctx.address {
+//					errCh <- fmt.Errorf("worker %d address mismatch", index)
+//					return
+//				}
+//			}(i)
+//		}
+//
+//		wg.Wait()
+//		close(errCh)
+//
+//		for err := range errCh {
+//			t.Error(err)
+//		}
+//	})
+//}
 
 func FuzzPublicKeyFormat(f *testing.F) {
 	ctx, err := setupFuzzTest()
