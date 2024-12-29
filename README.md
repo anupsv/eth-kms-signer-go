@@ -13,6 +13,7 @@ AWS KMS Ethereum Signer is a Go package that converts **AWS Key Management Servi
     - [Types](#types)
     - [Functions](#functions)
     - [Interfaces](#interfaces)
+- [How to load custom Private Key](#how-to-load-custom-private-key)
 - [Contributing](#contributing)
 
 ## Features
@@ -229,6 +230,50 @@ type KMSClient interface {
 ```
 
 Purpose: Allows for dependency injection, enabling easy mocking during testing.
+
+
+### How to load custom Private Key
+
+Follow the steps:
+
+1. Install openssl
+2. Generate Ethereum Supported Private key: 
+   1. `openssl ecparam -name secp256k1 -genkey -noout -out ecc-secp256k1-private-key.pem`
+3. Set variables to download the PublicKey and ImportToken of the wrap key created above, making it easier for us to generate the key material that satisfies the requirements
+   1. ```bash
+      export KEY=`aws kms get-parameters-for-import --region ap-southeast-1 \
+      --key-id {replace-with-key-id} \
+      --wrapping-algorithm RSAES_OAEP_SHA_256 \
+      --wrapping-key-spec RSA_2048 \
+      --query '{Key:PublicKey,Token:ImportToken}' \
+      --output text`
+      echo $KEY | awk '{print $1}' > PublicKey.b64
+      echo $KEY | awk '{print $2}' > ImportToken.b64
+      openssl enc -d -base64 -A -in PublicKey.b64 -out PublicKey.bin
+      openssl enc -d -base64 -A -in ImportToken.b64 -out ImportToken.bin
+      ```
+4. Convert the private key to Base64 and generate a binary file, We can accomplish this in one step with the appropriate command
+   1. `cat ec-secp256k1-priv-key.pem | openssl pkcs8 -topk8 -outform der -nocrypt > ec-secp256k1-priv-key.der`
+
+5. Next, we use pkeyutl to encrypt the generated binary file and generate the required key material
+   1. ```bash
+      openssl pkeyutl \
+      -encrypt \
+      -in ec-secp256k1-priv-key.der \
+      -out EncryptedKeyMaterial.bin \
+      -inkey PublicKey.bin \
+      -keyform DER \
+      -pubin -encrypt -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+      ```
+      
+6. Next, we perform the upload operation
+   1. ```bash
+      aws kms import-key-material --region ap-southeast-1 \
+      --key-id {your-key-id} \
+      --encrypted-key-material fileb://EncryptedKeyMaterial.bin \
+      --import-token fileb://ImportToken.bin \
+      --expiration-model KEY_MATERIAL_DOES_NOT_EXPIRE
+      ```
 
 ## Contributing
 
