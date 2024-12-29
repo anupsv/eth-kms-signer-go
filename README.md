@@ -274,6 +274,21 @@ Follow the steps:
       --import-token fileb://ImportToken.bin \
       --expiration-model KEY_MATERIAL_DOES_NOT_EXPIRE
       ```
+      
+Get the Private Key & Public Key from Pem file using OpenSSL:
+
+1. Output ECC Key
+   1. ```bash 
+      cat ecc-secp256k1-private-key.pem | openssl ec -text -noout > key.txt
+      ```
+2. Get Private Key
+   1. ```bash
+      cat key | grep pub -A 5 | tail -n +2 | tr -d '\n[:space:]:' | sed 's/^04//' > publicKey.txt
+      ```
+3. Get Public Key
+   1. ```bash
+      cat key | grep priv -A 3 | tail -n +2 | tr -d '\n[:space:]:' | sed 's/^00//' > publicKey.txt
+      ```
 
 ## Contributing
 
