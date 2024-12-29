@@ -46,7 +46,7 @@ import (
 
     "github.com/aws/aws-sdk-go-v2/config"
     "github.com/aws/aws-sdk-go-v2/service/kms"
-    "github.com/yourusername/aws_kms_eth"
+    "github.com/anupsv/aws-kms-eth"
 )
 
 func main() {
@@ -83,7 +83,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/yourusername/aws_kms_eth"
+    "github.com/anupsv/aws-kms-eth"
 )
 
 func main() {
@@ -111,8 +111,8 @@ package main
 import (
     "fmt"
     "log"
-
-    "github.com/yourusername/aws_kms_eth"
+	
+    "github.com/anupsv/aws-kms-eth"
 )
 
 func main() {
@@ -160,12 +160,12 @@ func NewKMSEthereumSigner(kmsClient KMSClient, keyID string) (*KMSEthereumSigner
 ```
 
 Parameters:
-- kmsClient: An implementation of the KMSClient interface.
-- ID: The identifier of the AWS KMS key to use.
+- `kmsClient`: An implementation of the KMSClient interface.
+- `ID`: The identifier of the AWS KMS key to use.
 
 Returns:
-- *KMSEthereumSigner: A new instance of the signer.
-- or: An error if initialization fails.
+- `*KMSEthereumSigner`: A new instance of the signer.
+- `error`: An error if initialization fails.
 
 ```go
 SignMessage
@@ -178,11 +178,11 @@ func (kmsEthereumSigner *KMSEthereumSigner) SignMessage(message []byte) ([]byte,
 ```
 
 Parameters:
-- message: The message to sign.
+- `message`: The message to sign.
 
 Returns:
-- []byte: The 65-byte Ethereum-compatible signature.
-- or: An error if signing fails.
+- `[]byte`: The 65-byte Ethereum-compatible signature.
+- `error`: An error if signing fails.
 
 ```go
 GetPublicKey
@@ -195,9 +195,9 @@ func (kmsEthereumSigner *KMSEthereumSigner) GetPublicKey() (*ecdsa.PublicKey, *E
 ```
 
 Returns:
-- *ecdsa.PublicKey: The parsed ECDSA public key.
-- *ECDSAPublicKey: The ASN.1 structure of the public key.
-- error: An error if retrieval or parsing fails.
+- `*ecdsa.PublicKey`: The parsed ECDSA public key.
+- `*ECDSAPublicKey`: The ASN.1 structure of the public key.
+- `error`: An error if retrieval or parsing fails.
 
 ```go
 GetAddress
@@ -210,8 +210,8 @@ func (kmsEthereumSigner *KMSEthereumSigner) GetAddress() (common.Address, error)
 ```
 
 Returns:
-- common.Address: The Ethereum address.
-- error: An error if address derivation fails.
+- `common.Address`: The Ethereum address.
+- `error`: An error if address derivation fails.
 
 ### Interfaces
 
