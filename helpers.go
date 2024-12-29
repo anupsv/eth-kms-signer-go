@@ -2,11 +2,13 @@ package aws_kms_eth
 
 import (
 	"encoding/asn1"
+	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 )
 
-// ECPrivateKey represents an ASN.1 encoded EC private key
+// ECPrivateKey represents an ASN.1 encoded EC private key.
 type ECPrivateKey struct {
 	Version    int
 	PrivateKey []byte
@@ -15,17 +17,16 @@ type ECPrivateKey struct {
 }
 
 func ExtractEthereumKeysFromPemPrivateKey(pemData []byte) (string, string, error) {
-
 	// Decode PEM block
 	block, _ := pem.Decode(pemData)
 	if block == nil {
-		return "", "", fmt.Errorf("failed to decode PEM block")
+		return "", "", errors.New("failed to decode PEM block")
 	}
 
 	// Parse the ASN.1 structure directly
 	var privKey ECPrivateKey
 	if _, err := asn1.Unmarshal(block.Bytes, &privKey); err != nil {
-		return "", "", fmt.Errorf("failed to parse ASN.1 structure: %v", err)
+		return "", "", fmt.Errorf("failed to parse ASN.1 structure: %w", err)
 	}
 
 	// Convert private key bytes to hex, ensuring it's 64 characters
@@ -36,7 +37,7 @@ func ExtractEthereumKeysFromPemPrivateKey(pemData []byte) (string, string, error
 	if len(pubKeyBytes) > 0 && pubKeyBytes[0] == 0x04 {
 		pubKeyBytes = pubKeyBytes[1:]
 	}
-	pubHex := fmt.Sprintf("%x", pubKeyBytes)
+	pubHex := hex.EncodeToString(pubKeyBytes)
 
 	return privHex, pubHex, nil
 }

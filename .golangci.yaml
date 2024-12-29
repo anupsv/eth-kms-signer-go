@@ -347,6 +347,7 @@ issues:
   exclude-files:
     - "signer_test.go"
     - "mock_signer.go"
+    - "helpers_test.go"
 
   exclude-rules:
     - source: "(noinspection|TODO)"
