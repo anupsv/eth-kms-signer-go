@@ -89,9 +89,10 @@ func NewKMSEthereumSigner(kmsClient KMSClient, keyID string) (*KMSEthereumSigner
 	}
 
 	return &KMSEthereumSigner{
-		kmsClient:      kmsClient,
-		keyID:          keyID,
-		secp256k1N:     crypto.S256().Params().N,
+		kmsClient:  kmsClient,
+		keyID:      keyID,
+		secp256k1N: crypto.S256().Params().N,
+		//nolint:mnd // This is just dividing in half
 		secp256k1HalfN: new(big.Int).Div(crypto.S256().Params().N, big.NewInt(2)),
 	}, nil
 }
@@ -164,16 +165,20 @@ func (kmsEthereumSigner *KMSEthereumSigner) SignMessage(message []byte) ([]byte,
 	rsSignature := append(adjustSignatureLength(r), adjustSignatureLength(s)...)
 
 	// Step 8: Attempt to recover the public key with V=0
+	//nolint:gocritic // This usage mechanism works
 	signature0 := append(rsSignature, byte(0))
 	recoveredPublicKeyBytes, err := crypto.Ecrecover(messageHash, signature0)
-	if err == nil && hex.EncodeToString(recoveredPublicKeyBytes) == hex.EncodeToString(crypto.S256().Marshal(pubKey.X, pubKey.Y)) {
+	if err == nil && hex.EncodeToString(recoveredPublicKeyBytes) ==
+		hex.EncodeToString(crypto.S256().Marshal(pubKey.X, pubKey.Y)) {
 		return signature0, nil
 	}
 
 	// Step 9: Attempt to recover the public key with V=1
+	//nolint:gocritic // This usage mechanism works
 	signature1 := append(rsSignature, byte(1))
 	recoveredPublicKeyBytes, err = crypto.Ecrecover(messageHash, signature1)
-	if err == nil && hex.EncodeToString(recoveredPublicKeyBytes) == hex.EncodeToString(crypto.S256().Marshal(pubKey.X, pubKey.Y)) {
+	if err == nil && hex.EncodeToString(recoveredPublicKeyBytes) ==
+		hex.EncodeToString(crypto.S256().Marshal(pubKey.X, pubKey.Y)) {
 		return signature1, nil
 	}
 
