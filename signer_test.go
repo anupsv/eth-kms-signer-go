@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/big"
+	"sync"
+	"testing"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/ory/dockertest/v3"
-	"math/big"
-	"sync"
-	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/ethereum/go-ethereum/common"
@@ -20,16 +21,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// LocalstackKMSClient implements KMSClient interface using actual KMS calls to Localstack
+var (
+	_secp256k1N     = crypto.S256().Params().N
+	_secp256k1HalfN = new(big.Int).Div(_secp256k1N, big.NewInt(2))
+)
+
+// LocalstackKMSClient implements KMSClient interface using actual KMS calls to Localstack.
 type LocalstackKMSClient struct {
 	client *kms.Client
 }
 
-func (l *LocalstackKMSClient) GetPublicKey(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+func (l *LocalstackKMSClient) GetPublicKey(
+	ctx context.Context,
+	input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
 	return l.client.GetPublicKey(ctx, input)
 }
 
-func (l *LocalstackKMSClient) Sign(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error) {
+func (l *LocalstackKMSClient) Sign(
+	ctx context.Context,
+	input *kms.SignInput) (*kms.SignOutput, error) {
 	return l.client.Sign(ctx, input)
 }
 
@@ -56,13 +66,13 @@ var (
 
 func setupFuzzTest() (*fuzzContext, error) {
 	setupOnce.Do(func() {
-
-		customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-			return aws.Endpoint{
-				URL:           "http://localhost:4566",
-				SigningRegion: "us-east-1",
-			}, nil
-		})
+		customResolver := aws.EndpointResolverWithOptionsFunc(
+			func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					URL:           "http://localhost:4566",
+					SigningRegion: "us-east-1",
+				}, nil
+			})
 
 		cfg, err := config.LoadDefaultConfig(context.Background(),
 			config.WithRegion("us-east-1"),
@@ -113,13 +123,13 @@ func setupFuzzTest() (*fuzzContext, error) {
 }
 
 func setupLocalstack(t *testing.T) *testContext {
-
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			URL:           "http://localhost:4566",
-			SigningRegion: "us-east-1",
-		}, nil
-	})
+	customResolver := aws.EndpointResolverWithOptionsFunc(
+		func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+			return aws.Endpoint{
+				URL:           "http://localhost:4566",
+				SigningRegion: "us-east-1",
+			}, nil
+		})
 
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion("us-east-1"),
@@ -150,12 +160,12 @@ func setupLocalstack(t *testing.T) *testContext {
 
 func TestSignMessage(t *testing.T) {
 	mockClient := &MockKMSClient{
-		MockGetPublicKey: func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+		MockGetPublicKey: func(_ context.Context, _ *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
 			return &kms.GetPublicKeyOutput{
 				PublicKey: []byte{0x04, 0x01, 0x02, 0x03}, // Mock public key bytes
 			}, nil
 		},
-		MockSign: func(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error) {
+		MockSign: func(_ context.Context, _ *kms.SignInput) (*kms.SignOutput, error) {
 			return &kms.SignOutput{
 				Signature: []byte{0x30, 0x44, 0x02, 0x20}, // Mock signature bytes
 			}, nil
@@ -193,7 +203,7 @@ func TestNewKMSEthereumSigner(t *testing.T) {
 
 func TestGetPublicKey_InvalidKey(t *testing.T) {
 	mockClient := &MockKMSClient{
-		MockGetPublicKey: func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+		MockGetPublicKey: func(_ context.Context, _ *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
 			return &kms.GetPublicKeyOutput{
 				PublicKey: []byte{0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
 			}, nil
@@ -212,7 +222,7 @@ func TestGetPublicKey_InvalidKey(t *testing.T) {
 
 func TestGetPublicKey_KMSError(t *testing.T) {
 	mockClient := &MockKMSClient{
-		MockGetPublicKey: func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+		MockGetPublicKey: func(_ context.Context, _ *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
 			return nil, fmt.Errorf("mock KMS error")
 		},
 	}
@@ -229,7 +239,7 @@ func TestGetPublicKey_KMSError(t *testing.T) {
 
 func TestGetAddress_InvalidKey(t *testing.T) {
 	mockClient := &MockKMSClient{
-		MockGetPublicKey: func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+		MockGetPublicKey: func(_ context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
 			return &kms.GetPublicKeyOutput{
 				PublicKey: append([]byte{0x04}, bytes.Repeat([]byte{0x01}, 64)...),
 			}, nil
@@ -249,12 +259,12 @@ func TestGetAddress_InvalidKey(t *testing.T) {
 
 func TestSignMessage_InvalidKey(t *testing.T) {
 	mockClient := &MockKMSClient{
-		MockGetPublicKey: func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+		MockGetPublicKey: func(_ context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
 			return &kms.GetPublicKeyOutput{
 				PublicKey: append([]byte{0x04}, bytes.Repeat([]byte{0x01}, 64)...),
 			}, nil
 		},
-		MockSign: func(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error) {
+		MockSign: func(_ context.Context, input *kms.SignInput) (*kms.SignOutput, error) {
 			return &kms.SignOutput{
 				Signature: []byte{0x30, 0x44, 0x02, 0x20}, // Mocked signature
 			}, nil
@@ -275,7 +285,7 @@ func TestSignMessage_InvalidKey(t *testing.T) {
 
 func TestSignMessage_InvalidMessage(t *testing.T) {
 	mockClient := &MockKMSClient{
-		MockSign: func(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error) {
+		MockSign: func(_ context.Context, input *kms.SignInput) (*kms.SignOutput, error) {
 			return nil, fmt.Errorf("mock KMS error")
 		},
 	}
@@ -304,7 +314,7 @@ func TestSigner_EmptyKeyID(t *testing.T) {
 
 func TestGetPublicKey_InvalidASN1(t *testing.T) {
 	mockClient := &MockKMSClient{
-		MockGetPublicKey: func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+		MockGetPublicKey: func(_ context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
 			return &kms.GetPublicKeyOutput{
 				PublicKey: []byte{0x00, 0x01}, // Invalid ASN.1 data
 			}, nil
@@ -351,18 +361,17 @@ func TestKMSEthereumSigner(t *testing.T) {
 		// Sign message
 		signature, err := signer.SignMessage(message)
 		require.NoError(t, err)
-		assert.Equal(t, 65, len(signature))
+		assert.Len(t, signature, 65)
 
 		// Extract R, S, V
-		//r := new(big.Int).SetBytes(signature[:32])
+		// r := new(big.Int).SetBytes(signature[:32])
 		s := new(big.Int).SetBytes(signature[32:64])
 		v := signature[64]
 		assert.True(t, v == 0 || v == 1)
 
 		// Verify S is in lower half per EIP-2
-		_secp256k1N := crypto.S256().Params().N
-		secp256k1HalfN = new(big.Int).Div(_secp256k1N, big.NewInt(2))
-		assert.True(t, s.Cmp(secp256k1HalfN) <= 0)
+
+		assert.LessOrEqual(t, s.Cmp(_secp256k1HalfN), 0)
 
 		// Recover address
 		pubKeyBytes, err := crypto.Ecrecover(messageHash, signature)
@@ -403,7 +412,6 @@ func TestKMSEthereumSigner(t *testing.T) {
 }
 
 func FuzzSignMessage(f *testing.F) {
-
 	ctx, err := setupFuzzTest()
 	if err != nil {
 		f.Fatal(err)
@@ -414,12 +422,11 @@ func FuzzSignMessage(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0xFF, 0x00, 0xFF})
 	f.Add([]byte("A longer message that might cause issues with ASN.1 encoding"))
-	f.Add([]byte(string(make([]byte, 1024)))) // 1KB of zeros
+	f.Add(make([]byte, 1024)) // 1KB of zeros
 
 	f.Fuzz(func(t *testing.T, message []byte) {
 		signature, err := ctx.signer.SignMessage(message)
 		if err != nil {
-			// Some messages might legitimately fail to sign
 			t.Logf("Failed to sign message: %v", err)
 			return
 		}
@@ -439,7 +446,7 @@ func FuzzSignMessage(f *testing.F) {
 
 		// Verify s is in lower half per EIP-2
 		s := new(big.Int).SetBytes(signature[32:64])
-		if s.Cmp(secp256k1HalfN) > 0 {
+		if s.Cmp(_secp256k1HalfN) > 0 {
 			t.Error("S value is not in lower half of curve order")
 			return
 		}
@@ -460,7 +467,6 @@ func FuzzSignMessage(f *testing.F) {
 }
 
 func FuzzConcurrentSigning(f *testing.F) {
-
 	ctx, err := setupFuzzTest()
 	if err != nil {
 		f.Fatal(err)
@@ -516,41 +522,36 @@ func FuzzConcurrentSigning(f *testing.F) {
 }
 
 func FuzzPublicKeyFormat(f *testing.F) {
-	ctx, err := setupFuzzTest()
-	if err != nil {
-		f.Fatal(err)
-	}
+	// Add seed corpus
+	f.Add([]byte("Hello, World!"))
+	f.Add([]byte{})
+	f.Add([]byte{0xFF, 0x00, 0xFF})
+	f.Add([]byte("A longer message that might cause issues with ASN.1 encoding"))
+	f.Add(make([]byte, 1024))
 
-	f.Add(uint8(1))
+	f.Fuzz(func(t *testing.T, pubKeyInput []byte) {
+		mockClient := &MockKMSClient{
+			MockGetPublicKey: func(ctx context.Context, input *kms.GetPublicKeyInput) (*kms.GetPublicKeyOutput, error) {
+				return &kms.GetPublicKeyOutput{
+					PublicKey: pubKeyInput, // Mock public key bytes
+				}, nil
+			},
+			MockSign: func(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error) {
+				return &kms.SignOutput{
+					Signature: []byte{}, // Mock signature, for signature matching.
+				}, nil
+			},
+		}
 
-	f.Fuzz(func(t *testing.T, _ uint8) {
-		pubKey, asnPubKey, err := ctx.signer.GetPublicKey()
+		signer, err := NewKMSEthereumSigner(mockClient, "test-key-id")
 		if err != nil {
-			t.Errorf("Failed to get public key: %v", err)
-			return
+			t.Fatalf("Expected error, got nil")
 		}
 
-		// Verify the public key is on the curve
-		if !crypto.S256().IsOnCurve(pubKey.X, pubKey.Y) {
-			t.Error("Public key is not on curve")
+		_, _, err = signer.GetPublicKey()
+		if err == nil {
+			t.Errorf("Expected Error, got valid pubkey: %v", pubKeyInput)
 			return
-		}
-
-		// Check ASN1 format
-		if len(asnPubKey.PublicKey.Bytes) == 0 {
-			t.Error("ASN1 public key bytes are empty")
-			return
-		}
-
-		if asnPubKey.PublicKey.Bytes[0] != 0x04 {
-			t.Error("ASN1 public key is not in uncompressed format")
-			return
-		}
-
-		// Verify address derivation
-		derivedAddr := crypto.PubkeyToAddress(*pubKey)
-		if derivedAddr != ctx.address {
-			t.Errorf("Address mismatch: got %s, want %s", derivedAddr.Hex(), ctx.address.Hex())
 		}
 	})
 }

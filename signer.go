@@ -8,8 +8,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
@@ -22,32 +23,28 @@ type KMSClient interface {
 	Sign(ctx context.Context, input *kms.SignInput) (*kms.SignOutput, error)
 }
 
-// ECDSASignature represents the ASN1 structure of ECDSA signature
+// ECDSASignature represents the ASN1 structure of ECDSA signature.
 type asn1EcSig struct {
 	R, S *big.Int
 }
 
-var (
-	secp256k1N     = crypto.S256().Params().N
-	secp256k1HalfN = new(big.Int).Div(secp256k1N, big.NewInt(2))
-)
+const signatureBufferLength = 32
 
-// adjustSignatureLength ensures the byte slice is exactly 32 bytes long
+// adjustSignatureLength ensures the byte slice is exactly 32 bytes long.
 func adjustSignatureLength(buffer []byte) []byte {
-
-	if len(buffer) > 32 {
-		buffer = buffer[len(buffer)-32:] // Take last 32 bytes
+	if len(buffer) > signatureBufferLength {
+		buffer = buffer[len(buffer)-signatureBufferLength:] // Take last 32 bytes
 	}
 
 	buffer = bytes.TrimLeft(buffer, "\x00")
-	for len(buffer) < 32 {
+	for len(buffer) < signatureBufferLength {
 		zeroBuf := []byte{0}
 		buffer = append(zeroBuf, buffer...)
 	}
 	return buffer
 }
 
-// ECDSAPublicKey represents the ASN1 structure of ECDSA public key
+// ECDSAPublicKey represents the ASN1 structure of ECDSA public key.
 type ECDSAPublicKey struct {
 	Algorithm struct {
 		Algorithm  asn1.ObjectIdentifier
@@ -57,12 +54,13 @@ type ECDSAPublicKey struct {
 }
 
 type KMSEthereumSigner struct {
-	kmsClient KMSClient
-	keyID     string
+	kmsClient      KMSClient
+	keyID          string
+	secp256k1N     *big.Int
+	secp256k1HalfN *big.Int
 }
 
 func NewKMSEthereumSigner(kmsClient KMSClient, keyID string) (*KMSEthereumSigner, error) {
-
 	if kmsClient == nil {
 		return nil, errors.New("kms client is nil")
 	}
@@ -72,14 +70,16 @@ func NewKMSEthereumSigner(kmsClient KMSClient, keyID string) (*KMSEthereumSigner
 	}
 
 	return &KMSEthereumSigner{
-		kmsClient: kmsClient,
-		keyID:     keyID,
+		kmsClient:  kmsClient,
+		keyID:      keyID,
+		secp256k1N: crypto.S256().Params().N,
+		//nolint:mnd // This is just dividing in half
+		secp256k1HalfN: new(big.Int).Div(crypto.S256().Params().N, big.NewInt(2)),
 	}, nil
 }
 
-// SignMessage signs a message using KMS
+// SignMessage signs a message using KMS.
 func (kmsEthereumSigner *KMSEthereumSigner) SignMessage(message []byte) ([]byte, error) {
-
 	if len(message) == 0 {
 		return nil, errors.New("message must not be empty")
 	}
@@ -125,13 +125,14 @@ func (kmsEthereumSigner *KMSEthereumSigner) SignMessage(message []byte) ([]byte,
 
 	// Adjust S value according to Ethereum standard
 	sBigInt := new(big.Int).SetBytes(s)
-	if sBigInt.Cmp(secp256k1HalfN) > 0 {
-		s = new(big.Int).Sub(secp256k1N, sBigInt).Bytes()
+	if sBigInt.Cmp(kmsEthereumSigner.secp256k1HalfN) > 0 {
+		s = new(big.Int).Sub(kmsEthereumSigner.secp256k1N, sBigInt).Bytes()
 	}
 
 	// Create RS signature
 	rsSignature := append(adjustSignatureLength(r), adjustSignatureLength(s)...)
 
+	//nolint:gocritic // This usage mechanism works
 	// Try with v = 0
 	signature0 := append(rsSignature, byte(0))
 	recoveredPublicKeyBytes, err := crypto.Ecrecover(messageHash, signature0)
@@ -139,6 +140,7 @@ func (kmsEthereumSigner *KMSEthereumSigner) SignMessage(message []byte) ([]byte,
 		return signature0, nil
 	}
 
+	//nolint:gocritic // This usage mechanism works
 	// Try with v = 1
 	signature1 := append(rsSignature, byte(1))
 	recoveredPublicKeyBytes, err = crypto.Ecrecover(messageHash, signature1)
@@ -149,7 +151,7 @@ func (kmsEthereumSigner *KMSEthereumSigner) SignMessage(message []byte) ([]byte,
 	return nil, errors.New("can not reconstruct public key from signature")
 }
 
-// GetPublicKey retrieves the public key from KMS
+// GetPublicKey retrieves the public key from KMS.
 func (kmsEthereumSigner *KMSEthereumSigner) GetPublicKey() (*ecdsa.PublicKey, *ECDSAPublicKey, error) {
 	input := &kms.GetPublicKeyInput{
 		KeyId: &kmsEthereumSigner.keyID,
@@ -181,9 +183,8 @@ func (kmsEthereumSigner *KMSEthereumSigner) GetPublicKey() (*ecdsa.PublicKey, *E
 	return pubKeyECDSA, &pubKey, err
 }
 
-// GetAddress returns the Ethereum address for this key
+// GetAddress returns the Ethereum address for this key.
 func (kmsEthereumSigner *KMSEthereumSigner) GetAddress() (common.Address, error) {
-
 	_, as1PubKey, err := kmsEthereumSigner.GetPublicKey()
 	if err != nil {
 		return common.Address{}, err
@@ -192,7 +193,7 @@ func (kmsEthereumSigner *KMSEthereumSigner) GetAddress() (common.Address, error)
 	pubKeyBuffer := as1PubKey.PublicKey.Bytes
 	// Ensure the key is in uncompressed format and starts with 0x04
 	if len(pubKeyBuffer) == 0 || pubKeyBuffer[0] != 0x04 {
-		return common.Address{}, fmt.Errorf("invalid public key format")
+		return common.Address{}, errors.New("invalid public key format")
 	}
 
 	// Remove the prefix (0x04) from the uncompressed key
@@ -203,7 +204,6 @@ func (kmsEthereumSigner *KMSEthereumSigner) GetAddress() (common.Address, error)
 
 	// Take the last 20 bytes as the Ethereum address
 	ethAddress := common.BytesToAddress(pubKeyHash[len(pubKeyHash)-20:])
-	fmt.Printf("Generated Ethereum address: %s\n", ethAddress.Hex())
 
 	return ethAddress, nil
 }
