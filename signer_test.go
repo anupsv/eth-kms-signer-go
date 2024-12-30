@@ -3,8 +3,14 @@ package aws_kms_eth
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -561,203 +567,203 @@ type AWSResponse struct {
 	Token string `json:"Token"`
 }
 
-//func TestKeyImportProcess(t *testing.T) {
-//	// Create temporary directory for our test files
-//	tmpDir, err := os.MkdirTemp("", "key-import-test")
-//	if err != nil {
-//		t.Fatalf("Failed to create temp directory: %v", err)
-//	}
-//	defer os.RemoveAll(tmpDir)
-//
-//	customResolver := aws.EndpointResolverWithOptionsFunc(
-//		func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
-//			return aws.Endpoint{
-//				URL:           "http://localhost:4566",
-//				SigningRegion: "us-east-1",
-//			}, nil
-//		})
-//
-//	cfg, err := config.LoadDefaultConfig(context.Background(),
-//		config.WithRegion("us-east-1"),
-//		config.WithEndpointResolverWithOptions(customResolver),
-//		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "test")),
-//	)
-//	require.NoError(t, err)
-//
-//	kmsClient := kms.NewFromConfig(cfg)
-//
-//	// Wait for localstack
-//	var keyIDSignVerify string
-//	resp, err := kmsClient.CreateKey(context.Background(), &kms.CreateKeyInput{
-//		KeySpec:  types.KeySpecEccSecgP256k1,
-//		KeyUsage: types.KeyUsageTypeSignVerify,
-//		Origin:   types.OriginTypeExternal,
-//	})
-//	if err != nil {
-//		panic(err)
-//	}
-//
-//	keyIDSignVerify = *resp.KeyMetadata.KeyId
-//
-//	localstackClient := &LocalstackKMSClient{client: kmsClient}
-//
-//	signer, err := NewKMSEthereumSigner(localstackClient, keyIDSignVerify)
-//
-//	if err != nil {
-//		t.Fatalf("Expected no error, got %v", err)
-//	}
-//
-//	t.Run("Complete Key Import Process", func(t *testing.T) {
-//		// Step 1: Generate secp256k1 private key
-//		privKeyPath := filepath.Join(tmpDir, "ecc-secp256k1-private-key.pem")
-//		cmd := exec.Command("openssl", "ecparam",
-//			"-name", "secp256k1",
-//			"-genkey",
-//			"-noout",
-//			"-out", privKeyPath)
-//
-//		if output, err := cmd.CombinedOutput(); err != nil {
-//			t.Fatalf("Failed to generate private key: %v\nOutput: %s", err, output)
-//		}
-//
-//		// Step 2: Get AWS KMS parameters for import
-//		cmd = exec.Command("aws", "kms", "get-parameters-for-import",
-//			"--region", "us-east-1",
-//			"--endpoint", "http://localhost:4566",
-//			"--key-id", keyIDSignVerify,
-//			"--wrapping-algorithm", "RSAES_OAEP_SHA_256",
-//			"--wrapping-key-spec", "RSA_2048",
-//			"--query", "{Key:PublicKey,Token:ImportToken}",
-//			"--output", "json")
-//
-//		output, err := cmd.Output()
-//		if err != nil {
-//			t.Fatalf("Failed to get AWS parameters: %v", err)
-//		}
-//
-//		var awsResp AWSResponse
-//		if err := json.Unmarshal(output, &awsResp); err != nil {
-//			t.Fatalf("Failed to parse AWS response: %v", err)
-//		}
-//
-//		// Write public key and import token to files
-//		pubKeyPath := filepath.Join(tmpDir, "PublicKey.bin")
-//		tokenPath := filepath.Join(tmpDir, "ImportToken.bin")
-//
-//		pubKeyData, err := base64.StdEncoding.DecodeString(awsResp.Key)
-//		if err != nil {
-//			t.Fatalf("Failed to decode public key: %v", err)
-//		}
-//		if err := os.WriteFile(pubKeyPath, pubKeyData, 0600); err != nil {
-//			t.Fatalf("Failed to write public key: %v", err)
-//		}
-//
-//		tokenData, err := base64.StdEncoding.DecodeString(awsResp.Token)
-//		if err != nil {
-//			t.Fatalf("Failed to decode import token: %v", err)
-//		}
-//		if err := os.WriteFile(tokenPath, tokenData, 0600); err != nil {
-//			t.Fatalf("Failed to write import token: %v", err)
-//		}
-//
-//		// Step 3: Convert to PKCS8 DER format
-//		derPath := filepath.Join(tmpDir, "ec-secp256k1-priv-key.der")
-//		cmd = exec.Command("openssl", "pkcs8",
-//			"-topk8",
-//			"-outform", "der",
-//			"-nocrypt",
-//			"-in", privKeyPath,
-//			"-out", derPath)
-//
-//		if output, err := cmd.CombinedOutput(); err != nil {
-//			t.Fatalf("Failed to convert to PKCS8 DER: %v\nOutput: %s", err, output)
-//		}
-//
-//		// Step 4: Encrypt the key material
-//		encryptedPath := filepath.Join(tmpDir, "EncryptedKeyMaterial.bin")
-//		cmd = exec.Command("openssl", "pkeyutl",
-//			"-encrypt",
-//			"-in", derPath,
-//			"-out", encryptedPath,
-//			"-inkey", pubKeyPath,
-//			"-keyform", "DER",
-//			"-pubin",
-//			"-pkeyopt", "rsa_padding_mode:oaep",
-//			"-pkeyopt", "rsa_oaep_md:sha256")
-//
-//		if output, err := cmd.CombinedOutput(); err != nil {
-//			t.Fatalf("Failed to encrypt key material: %v\nOutput: %s", err, output)
-//		}
-//
-//		// Step 5: Import the key material to AWS KMS
-//		cmd = exec.Command("aws", "kms", "import-key-material",
-//			"--endpoint", "http://localhost:4566",
-//			"--region", "us-east-1",
-//			"--key-id", keyIDSignVerify,
-//			"--encrypted-key-material", fmt.Sprintf("fileb://%s", encryptedPath),
-//			"--import-token", fmt.Sprintf("fileb://%s", tokenPath),
-//			"--expiration-model", "KEY_MATERIAL_DOES_NOT_EXPIRE")
-//
-//		if output, err := cmd.CombinedOutput(); err != nil {
-//			t.Fatalf("Failed to import key material: %v\nOutput: %s", err, output)
-//		}
-//
-//		// Optional: Verify the imported key is active
-//		cmd = exec.Command("aws", "kms", "describe-key",
-//			"--endpoint", "http://localhost:4566",
-//			"--region", "us-east-1",
-//			"--key-id", keyIDSignVerify,
-//			"--query", "KeyMetadata.KeyState",
-//			"--output", "text")
-//
-//		output, err = cmd.Output()
-//		if err != nil {
-//			t.Fatalf("Failed to verify key state: %v", err)
-//		}
-//
-//		keyState := strings.TrimSpace(string(output))
-//		if keyState != "Enabled" {
-//			t.Errorf("Unexpected key state: got %s, want Enabled", keyState)
-//		}
-//
-//		pubKey, _, err := signer.GetPublicKey()
-//		require.NoError(t, err)
-//		require.NotNil(t, pubKey)
-//
-//		address, err := signer.GetAddress()
-//		require.NoError(t, err)
-//		assert.True(t, common.IsHexAddress(address.Hex()))
-//
-//		message := []byte("Hello, Ethereum!")
-//		messageHash := crypto.Keccak256(message)
-//
-//		// Get expected address
-//		expectedAddr, err := signer.GetAddress()
-//		require.NoError(t, err)
-//
-//		// Sign message
-//		signature, err := signer.SignMessage(message)
-//		require.NoError(t, err)
-//		assert.Len(t, signature, 65)
-//
-//		// Extract R, S, V
-//		// r := new(big.Int).SetBytes(signature[:32])
-//		s := new(big.Int).SetBytes(signature[32:64])
-//		v := signature[64]
-//		assert.True(t, v == 0 || v == 1)
-//
-//		// Verify S is in lower half per EIP-2
-//
-//		assert.LessOrEqual(t, s.Cmp(_secp256k1HalfN), 0)
-//
-//		// Recover address
-//		pubKeyBytes, err := crypto.Ecrecover(messageHash, signature)
-//		require.NoError(t, err)
-//
-//		pubKey2, err := crypto.UnmarshalPubkey(pubKeyBytes)
-//		require.NoError(t, err)
-//
-//		recoveredAddr := crypto.PubkeyToAddress(*pubKey2)
-//		assert.Equal(t, expectedAddr, recoveredAddr)
-//	})
-//}
+func TestKeyImportProcess(t *testing.T) {
+	// Create temporary directory for our test files
+	tmpDir, err := os.MkdirTemp("", "key-import-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	customResolver := aws.EndpointResolverWithOptionsFunc(
+		func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+			return aws.Endpoint{
+				URL:           "http://localhost:4566",
+				SigningRegion: "us-east-1",
+			}, nil
+		})
+
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion("us-east-1"),
+		config.WithEndpointResolverWithOptions(customResolver),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "test")),
+	)
+	require.NoError(t, err)
+
+	kmsClient := kms.NewFromConfig(cfg)
+
+	// Wait for localstack
+	var keyIDSignVerify string
+	resp, err := kmsClient.CreateKey(context.Background(), &kms.CreateKeyInput{
+		KeySpec:  types.KeySpecEccSecgP256k1,
+		KeyUsage: types.KeyUsageTypeSignVerify,
+		Origin:   types.OriginTypeExternal,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	keyIDSignVerify = *resp.KeyMetadata.KeyId
+
+	localstackClient := &LocalstackKMSClient{client: kmsClient}
+
+	signer, err := NewKMSEthereumSigner(localstackClient, keyIDSignVerify)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	t.Run("Complete Key Import Process", func(t *testing.T) {
+		// Step 1: Generate secp256k1 private key
+		privKeyPath := filepath.Join(tmpDir, "ecc-secp256k1-private-key.pem")
+		cmd := exec.Command("openssl", "ecparam",
+			"-name", "secp256k1",
+			"-genkey",
+			"-noout",
+			"-out", privKeyPath)
+
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to generate private key: %v\nOutput: %s", err, output)
+		}
+
+		// Step 2: Get AWS KMS parameters for import
+		cmd = exec.Command("aws", "kms", "get-parameters-for-import",
+			"--region", "us-east-1",
+			"--endpoint", "http://localhost:4566",
+			"--key-id", keyIDSignVerify,
+			"--wrapping-algorithm", "RSAES_OAEP_SHA_256",
+			"--wrapping-key-spec", "RSA_2048",
+			"--query", "{Key:PublicKey,Token:ImportToken}",
+			"--output", "json")
+
+		output, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("Failed to get AWS parameters: %v", err)
+		}
+
+		var awsResp AWSResponse
+		if err := json.Unmarshal(output, &awsResp); err != nil {
+			t.Fatalf("Failed to parse AWS response: %v", err)
+		}
+
+		// Write public key and import token to files
+		pubKeyPath := filepath.Join(tmpDir, "PublicKey.bin")
+		tokenPath := filepath.Join(tmpDir, "ImportToken.bin")
+
+		pubKeyData, err := base64.StdEncoding.DecodeString(awsResp.Key)
+		if err != nil {
+			t.Fatalf("Failed to decode public key: %v", err)
+		}
+		if err := os.WriteFile(pubKeyPath, pubKeyData, 0600); err != nil {
+			t.Fatalf("Failed to write public key: %v", err)
+		}
+
+		tokenData, err := base64.StdEncoding.DecodeString(awsResp.Token)
+		if err != nil {
+			t.Fatalf("Failed to decode import token: %v", err)
+		}
+		if err := os.WriteFile(tokenPath, tokenData, 0600); err != nil {
+			t.Fatalf("Failed to write import token: %v", err)
+		}
+
+		// Step 3: Convert to PKCS8 DER format
+		derPath := filepath.Join(tmpDir, "ec-secp256k1-priv-key.der")
+		cmd = exec.Command("openssl", "pkcs8",
+			"-topk8",
+			"-outform", "der",
+			"-nocrypt",
+			"-in", privKeyPath,
+			"-out", derPath)
+
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to convert to PKCS8 DER: %v\nOutput: %s", err, output)
+		}
+
+		// Step 4: Encrypt the key material
+		encryptedPath := filepath.Join(tmpDir, "EncryptedKeyMaterial.bin")
+		cmd = exec.Command("openssl", "pkeyutl",
+			"-encrypt",
+			"-in", derPath,
+			"-out", encryptedPath,
+			"-inkey", pubKeyPath,
+			"-keyform", "DER",
+			"-pubin",
+			"-pkeyopt", "rsa_padding_mode:oaep",
+			"-pkeyopt", "rsa_oaep_md:sha256")
+
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to encrypt key material: %v\nOutput: %s", err, output)
+		}
+
+		// Step 5: Import the key material to AWS KMS
+		cmd = exec.Command("aws", "kms", "import-key-material",
+			"--endpoint", "http://localhost:4566",
+			"--region", "us-east-1",
+			"--key-id", keyIDSignVerify,
+			"--encrypted-key-material", fmt.Sprintf("fileb://%s", encryptedPath),
+			"--import-token", fmt.Sprintf("fileb://%s", tokenPath),
+			"--expiration-model", "KEY_MATERIAL_DOES_NOT_EXPIRE")
+
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to import key material: %v\nOutput: %s", err, output)
+		}
+
+		// Optional: Verify the imported key is active
+		cmd = exec.Command("aws", "kms", "describe-key",
+			"--endpoint", "http://localhost:4566",
+			"--region", "us-east-1",
+			"--key-id", keyIDSignVerify,
+			"--query", "KeyMetadata.KeyState",
+			"--output", "text")
+
+		output, err = cmd.Output()
+		if err != nil {
+			t.Fatalf("Failed to verify key state: %v", err)
+		}
+
+		keyState := strings.TrimSpace(string(output))
+		if keyState != "Enabled" {
+			t.Errorf("Unexpected key state: got %s, want Enabled", keyState)
+		}
+
+		pubKey, _, err := signer.GetPublicKey()
+		require.NoError(t, err)
+		require.NotNil(t, pubKey)
+
+		address, err := signer.GetAddress()
+		require.NoError(t, err)
+		assert.True(t, common.IsHexAddress(address.Hex()))
+
+		message := []byte("Hello, Ethereum!")
+		messageHash := crypto.Keccak256(message)
+
+		// Get expected address
+		expectedAddr, err := signer.GetAddress()
+		require.NoError(t, err)
+
+		// Sign message
+		signature, err := signer.SignMessage(message)
+		require.NoError(t, err)
+		assert.Len(t, signature, 65)
+
+		// Extract R, S, V
+		// r := new(big.Int).SetBytes(signature[:32])
+		s := new(big.Int).SetBytes(signature[32:64])
+		v := signature[64]
+		assert.True(t, v == 0 || v == 1)
+
+		// Verify S is in lower half per EIP-2
+
+		assert.LessOrEqual(t, s.Cmp(_secp256k1HalfN), 0)
+
+		// Recover address
+		pubKeyBytes, err := crypto.Ecrecover(messageHash, signature)
+		require.NoError(t, err)
+
+		pubKey2, err := crypto.UnmarshalPubkey(pubKeyBytes)
+		require.NoError(t, err)
+
+		recoveredAddr := crypto.PubkeyToAddress(*pubKey2)
+		assert.Equal(t, expectedAddr, recoveredAddr)
+	})
+}
