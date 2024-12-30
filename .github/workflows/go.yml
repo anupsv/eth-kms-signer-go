@@ -35,7 +35,7 @@ jobs:
         version: v1.62
 
     - name: Test
-      run: apt update && apt -y upgrade && apt install -y openssl && make test-with-localstack
+      run: sudo apt update && sudo apt -y upgrade && sudo apt install -y openssl && make test-with-localstack
 
     - name: Fuzz Test
       run: make fuzz-with-localstack
